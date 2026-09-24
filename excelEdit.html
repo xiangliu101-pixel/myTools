@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 Excel 数据在线工作台 (纯静态版)</title>
+    <!-- 引入官方 SheetJS 库用于解析和生成真实的 Excel 文件 -->
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8f9fa; color: #333; margin: 0; padding: 30px; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eaeaea; padding-bottom: 15px; margin-bottom: 20px; }
+        h2 { margin: 0; color: #111; }
+        
+        .action-zone { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+        .file-btn { position: relative; overflow: hidden; display: inline-block; background: #8e8e93; color: white; padding: 10px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .file-btn input[type=file] { position: absolute; left: 0; top: 0; opacity: 0; font-size: 100px; cursor: pointer; }
+        button { padding: 10px 16px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        .btn-primary { background: #007aff; color: white; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-success { background: #34c759; color: white; }
+        .btn-success:hover { background: #28a745; }
+        .btn-warning { background: #ff9500; color: white; }
+        .btn-danger { background: #ff3b30; color: white; }
+        
+        .search-bar { width: 100%; box-sizing: border-box; padding: 12px; margin-bottom: 20px; border: 1px solid #ced4da; border-radius: 6px; font-size: 15px; }
+        
+        .editor-box { background: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) auto; gap: 15px; align-items: end; }
+        .editor-box input { padding: 10px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px; background: white; }
+        
+        .table-container { overflow-x: auto; max-height: 500px; border: 1px solid #dee2e6; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #dee2e6; font-size: 14px; }
+        th { background-color: #f1f3f5; color: #495057; position: sticky; top: 0; }
+        tr:hover { background-color: #f8f9fa; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h2>📊 Excel 数据在线工作台</h2>
+        <div class="action-zone">
+            <div class="file-btn">
+                📂 导入本地 Excel
+                <input type="file" id="excelFile" accept=".xlsx, .xls" onchange="importExcel(event)">
+            </div>
+            <button class="btn-success" onclick="exportExcel()">📥 保存并导出为新 Excel</button>
+            <button class="btn-danger" onclick="clearAllData()">🗑️ 清空当前表格数据</button>
+        </div>
+    </header>
+    
+    <!-- 实时检索 (查) -->
+    <input type="text" id="searchInp" class="search-bar" placeholder="🔍 输入任意关键字实时筛选过滤表格..." oninput="renderTable()">
+
+    <!-- 数据编辑器 (增 / 改) -->
+    <div class="editor-box">
+        <input type="hidden" id="editIndex">
+        <input type="text" id="col1" placeholder="列1数据 (如：物品名称)">
+        <input type="text" id="col2" placeholder="列2数据 (如：型号)">
+        <input type="text" id="col3" placeholder="列3数据 (如：数量/备注)">
+        <button id="submitBtn" class="btn-primary" onclick="saveRow()">➕ 添加一行</button>
+    </div>
+
+    <!-- 数据展示区 -->
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr id="tableHeader">
+                    <th>列1</th>
+                    <th>列2</th>
+                    <th>列3</th>
+                    <th style="width: 120px; text-align: center;">操作</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="4" style="text-align:center; color:#999; padding:30px;">💡 请点击上方导入一个 Excel 文件，或者直接点击下方添加数据</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // 核心数据模型（预设3列，导入Excel后会自动匹配Excel的真实表头和列数）
+    let headers = ["项目名称", "分类标签", "备注说明"];
+    let tableData = JSON.parse(localStorage.getItem('excel_virtual_db')) || [
+        { "项目名称": "示例工具A", "分类标签": "系统工具", "备注说明": "无网可用" },
+        { "项目名称": "示例工具B", "分类标签": "开发辅助", "备注说明": "主力推荐" }
+    ];
+
+    // 1. 【查】渲染动态表格
+    function renderTable() {
+        const tHead = document.getElementById('tableHeader');
+        const tBody = document.getElementById('tableBody');
+        const keyword = document.getElementById('searchInp').value.toLowerCase();
+        
+        // 动态渲染表头
+        tHead.innerHTML = '';
+        headers.forEach(h => {
+            const th = document.createElement('th');
+            th.innerText = h;
+            tHead.appendChild(th);
+        });
+        const actionTh = document.createElement('th');
+        actionTh.innerText = "操作";
+        actionTh.style.textAlign = "center";
+        tHead.appendChild(actionTh);
+
+        // 动态更新输入框的提示文本（匹配最新的表头名称）
+        document.getElementById('col1').placeholder = (headers[0] || '列1') + " 数据";
+        document.getElementById('col2').placeholder = (headers[1] || '列2') + " 数据";
+        document.getElementById('col3').placeholder = (headers[2] || '列3') + " 数据";
+
+        // 过滤搜索
+        tBody.innerHTML = '';
+        const filtered = tableData.filter(row => {
+            return Object.values(row).some(val => String(val).toLowerCase().includes(keyword));
+        });
+
+        if (filtered.length === 0) {
+            tBody.innerHTML = `<tr><td colspan="${headers.length + 1}" style="text-align:center; color:#999; padding:20px;">没有找到匹配的数据</td></tr>`;
+            return;
+        }
+
+        // 渲染行
+        filtered.forEach((row) => {
+            // 找到该行在原数据集中的真实索引
+            const realIndex = tableData.indexOf(row);
+            const tr = document.createElement('tr');
+            
+            headers.forEach(h => {
+                const td = document.createElement('td');
+                td.innerText = row[h] !== undefined ? row[h] : '';
+                tr.appendChild(td);
+            });
+
+            const actionTd = document.createElement('td');
+            actionTd.style.textAlign = "center";
+            actionTd.innerHTML = `
+                <button class="btn-warning" style="padding:4px 8px; font-size:12px;" onclick="prepareEdit(${realIndex})">改</button>
+                <button class="btn-danger" style="padding:4px 8px; font-size:12px;" onclick="deleteRow(${realIndex})">删</button>
+            `;
+            tr.appendChild(actionTd);
+            tBody.appendChild(tr);
+        });
+
+        // 自动备份到浏览器本地LocalStorage，防止刷新丢失
+        localStorage.setItem('excel_virtual_db', JSON.stringify(tableData));
+        localStorage.setItem('excel_virtual_headers', JSON.stringify(headers));
+    }
+
+    // 2. 【增 / 改】数据写入
+    function saveRow() {
+        const editIdx = document.getElementById('editIndex').value;
+        const v1 = document.getElementById('col1').value.trim();
+        const v2 = document.getElementById('col2').value.trim();
+        const v3 = document.getElementById('col3').value.trim();
+
+        if (!v1 && !v2 && !v3) { alert("请输入需要添加的数据！"); return; }
+
+        let newRow = {};
+        if (headers[0]) newRow[headers[0]] = v1;
+        if (headers[1]) newRow[headers[1]] = v2;
+        if (headers[2]) newRow[headers[2]] = v3;
+
+        if (editIdx !== "") {
+            // 改：替换原位置数据
+            tableData[parseInt(editIdx)] = newRow;
+            document.getElementById('submitBtn').innerText = '➕ 添加一行';
+            document.getElementById('editIndex').value = "";
+        } else {
+            // 增：末尾追加
+            tableData.push(newRow);
+        }
+
+        // 置空输入框
+        document.getElementById('col1').value = '';
+        document.getElementById('col2').value = '';
+        document.getElementById('col3').value = '';
+        renderTable();
+    }
+
+    // 3. 【改的前置】回显数据到输入框
+    function prepareEdit(index) {
+        const row = tableData[index];
+        document.getElementById('editIndex').value = index;
+        document.getElementById('col1').value = row[headers[0]] || '';
+        document.getElementById('col2').value = row[headers[1]] || '';
+        document.getElementById('col3').value = row[headers[2]] || '';
+        document.getElementById('submitBtn').innerText = '🔄 保存修改';
+    }
+
+    // 4. 【删】删除指定行
+    function deleteRow(index) {
+        if (confirm("确定要删除这一行数据吗？")) {
+            tableData.splice(index, 1);
+            renderTable();
+        }
+    }
+
+    // 5. 【导入】读取本地真实的 Excel 文件
+    function importExcel(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            
+            // 默认读取第一个工作表 (Sheet1)
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // 将表格转换为 JSON 对象数组
+            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            
+            if (jsonData.length > 0) {
+                // 动态获取真实 Excel 的表头列名
+                headers = Object.keys(jsonData[0]);
+                tableData = jsonData;
+                renderTable();
+                alert(`🎉 成功导入！共载入 ${jsonData.length} 行数据。`);
+            } else {
+                alert("选中的 Excel 文件中似乎没有有效数据。");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    // 6. 【导出】生成并下载真实的 .xlsx 格式文件
+    function exportExcel() {
+        if (tableData.length === 0) { alert("当前表格没有可导出的数据！"); return; }
+        
+        // 创建工作簿和工作表
+        const worksheet = XLSX.utils.json_to_sheet(tableData, { header: headers });
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+        
+        // 触发浏览器下载
+        XLSX.writeFile(workbook, `Excel_Export_${Date.now()}.xlsx`);
+    }
+
+    // 7. 【清空】一键清空数据
+    function clearAllData() {
+        if (confirm("⚠️ 警告：确定要清空当前网页上的所有表格数据吗？清空后将无法找回。")) {
+            tableData = [];
+            renderTable();
+        }
+    }
+
+    // 页面载入时自动运行初始化
+    window.onload = function() {
+        const cachedHeaders = localStorage.getItem('excel_virtual_headers');
+        if (cachedHeaders) headers = JSON.parse(cachedHeaders);
+        renderTable();
+    };
+</script>
+</body>
+</html>
+
