@@ -81,21 +81,28 @@
 </div>
 
 <script>
-    // 核心数据模型（预设3列，导入Excel后会自动匹配Excel的真实表头和列数）
-    let headers = ["项目名称", "分类标签", "备注说明"];
-    let tableData = JSON.parse(localStorage.getItem('excel_virtual_db')) || [
-        { "项目名称": "示例工具A", "分类标签": "系统工具", "备注说明": "无网可用" },
-        { "项目名称": "示例工具B", "分类标签": "开发辅助", "备注说明": "主力推荐" }
-    ];
+    // 初始化为空！不再硬编码任何默认标题和假数据
+    // 只有在浏览器存有你之前导入过的数据时才会读取缓存，否则就是一张干净的白纸
+    let headers = JSON.parse(localStorage.getItem('excel_virtual_headers')) || [];
+    let tableData = JSON.parse(localStorage.getItem('excel_virtual_db')) || [];
 
-    // 1. 【查】渲染动态表格
+    // 1. 【查】自适应动态渲染表格
     function renderTable() {
         const tHead = document.getElementById('tableHeader');
         const tBody = document.getElementById('tableBody');
         const keyword = document.getElementById('searchInp').value.toLowerCase();
         
-        // 动态渲染表头
         tHead.innerHTML = '';
+        tBody.innerHTML = '';
+
+        // 如果用户还没有导入过任何文件，给出一个干净的导入向导提示
+        if (headers.length === 0) {
+            tHead.innerHTML = `<th>数据表格</th>`;
+            tBody.innerHTML = `<tr><td style="text-align:center; color:#999; padding:40px;">📂 当前没有数据。请点击上方【导入本地 Excel】按钮，系统将自动读取您的表格结构。</td></tr>`;
+            return;
+        }
+
+        // 🌟 核心改进：根据导入的 Excel 字段现场动态渲染所有表头
         headers.forEach(h => {
             const th = document.createElement('th');
             th.innerText = h;
@@ -106,25 +113,23 @@
         actionTh.style.textAlign = "center";
         tHead.appendChild(actionTh);
 
-        // 动态更新输入框的提示文本（匹配最新的表头名称）
-        document.getElementById('col1').placeholder = (headers[0] || '列1') + " 数据";
-        document.getElementById('col2').placeholder = (headers[1] || '列2') + " 数据";
-        document.getElementById('col3').placeholder = (headers[2] || '列3') + " 数据";
+        // 动态更新上方快速添加表单的输入框提示语（自动匹配读取到的前三个新列名）
+        document.getElementById('col1').placeholder = (headers[0] || '未知列1') + " 数据";
+        document.getElementById('col2').placeholder = (headers[1] || '未知列2') + " 数据";
+        document.getElementById('col3').placeholder = (headers[2] || '未知列3') + " 数据";
 
-        // 过滤搜索
-        tBody.innerHTML = '';
+        // 过滤搜索功能
         const filtered = tableData.filter(row => {
             return Object.values(row).some(val => String(val).toLowerCase().includes(keyword));
         });
 
         if (filtered.length === 0) {
-            tBody.innerHTML = `<tr><td colspan="${headers.length + 1}" style="text-align:center; color:#999; padding:20px;">没有找到匹配的数据</td></tr>`;
+            tBody.innerHTML = `<tr><td colspan="${headers.length + 1}" style="text-align:center; color:#aaafb6; padding:20px;">没有找到匹配的检索数据</td></tr>`;
             return;
         }
 
-        // 渲染行
+        // 渲染每一行提取出来的真实数据
         filtered.forEach((row) => {
-            // 找到该行在原数据集中的真实索引
             const realIndex = tableData.indexOf(row);
             const tr = document.createElement('tr');
             
@@ -144,43 +149,45 @@
             tBody.appendChild(tr);
         });
 
-        // 自动备份到浏览器本地LocalStorage，防止刷新丢失
+        // 智能自动同步到本地存储
         localStorage.setItem('excel_virtual_db', JSON.stringify(tableData));
         localStorage.setItem('excel_virtual_headers', JSON.stringify(headers));
     }
 
-    // 2. 【增 / 改】数据写入
+    // 2. 【增 / 改】自适应写入
     function saveRow() {
+        if (headers.length === 0) { alert("操作无效：请先导入一个 Excel 模板文件！"); return; }
+        
         const editIdx = document.getElementById('editIndex').value;
         const v1 = document.getElementById('col1').value.trim();
         const v2 = document.getElementById('col2').value.trim();
         const v3 = document.getElementById('col3').value.trim();
 
-        if (!v1 && !v2 && !v3) { alert("请输入需要添加的数据！"); return; }
+        if (!v1 && !v2 && !v3) { alert("输入失败：添加内容不能为空！"); return; }
 
         let newRow = {};
+        if (editIdx !== "") { newRow = { ...tableData[parseInt(editIdx)] }; }
+
+        // 严格按照实时读取出来的 Excel 表头键值写入
         if (headers[0]) newRow[headers[0]] = v1;
         if (headers[1]) newRow[headers[1]] = v2;
         if (headers[2]) newRow[headers[2]] = v3;
 
         if (editIdx !== "") {
-            // 改：替换原位置数据
             tableData[parseInt(editIdx)] = newRow;
             document.getElementById('submitBtn').innerText = '➕ 添加一行';
             document.getElementById('editIndex').value = "";
         } else {
-            // 增：末尾追加
             tableData.push(newRow);
         }
 
-        // 置空输入框
         document.getElementById('col1').value = '';
         document.getElementById('col2').value = '';
         document.getElementById('col3').value = '';
         renderTable();
     }
 
-    // 3. 【改的前置】回显数据到输入框
+    // 3. 【改的前置】
     function prepareEdit(index) {
         const row = tableData[index];
         document.getElementById('editIndex').value = index;
@@ -190,72 +197,78 @@
         document.getElementById('submitBtn').innerText = '🔄 保存修改';
     }
 
-    // 4. 【删】删除指定行
+    // 4. 【删】
     function deleteRow(index) {
-        if (confirm("确定要删除这一行数据吗？")) {
+        if (confirm("确定要彻底删除这一行吗？")) {
             tableData.splice(index, 1);
             renderTable();
         }
     }
 
-    // 5. 【导入】读取本地真实的 Excel 文件
+    // 5. 【导入】实时、动态、无死角提取表头和行数据
     function importExcel(event) {
         const file = event.target.files[0];
         if (!file) return;
 
         const reader = new FileReader();
         reader.onload = function(e) {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            
-            // 默认读取第一个工作表 (Sheet1)
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            
-            // 将表格转换为 JSON 对象数组
-            const jsonData = XLSX.utils.sheet_to_json(worksheet);
-            
-            if (jsonData.length > 0) {
-                // 动态获取真实 Excel 的表头列名
-                headers = Object.keys(jsonData[0]);
-                tableData = jsonData;
-                renderTable();
-                alert(`🎉 成功导入！共载入 ${jsonData.length} 行数据。`);
-            } else {
-                alert("选中的 Excel 文件中似乎没有有效数据。");
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // 将数据转为 JSON
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                
+                if (jsonData.length > 0) {
+                    // 🌟 真正做到根据数据提取表头：扫描全表所有的 Key，防止有些行漏掉字段
+                    const allKeys = new Set();
+                    jsonData.forEach(row => Object.keys(row).forEach(k => allKeys.add(k)));
+                    
+                    // 现场动态给变量赋值，拒绝 hardcode
+                    headers = Array.from(allKeys);
+                    tableData = jsonData;
+                    
+                    renderTable();
+                    alert(`🎉 成功！已动态读取并提取了 ${headers.length} 个表头列，共载入 ${jsonData.length} 行数据。`);
+                } else {
+                    alert("导入失败：该 Excel 找不到有效的数据行。");
+                }
+            } catch (err) {
+                alert("解析出错，请检查文件是否为标准 Excel 格式。");
+                console.error(err);
             }
         };
         reader.readAsArrayBuffer(file);
     }
 
-    // 6. 【导出】生成并下载真实的 .xlsx 格式文件
+    // 6. 【导出】
     function exportExcel() {
         if (tableData.length === 0) { alert("当前表格没有可导出的数据！"); return; }
-        
-        // 创建工作簿和工作表
         const worksheet = XLSX.utils.json_to_sheet(tableData, { header: headers });
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
-        
-        // 触发浏览器下载
-        XLSX.writeFile(workbook, `Excel_Export_${Date.now()}.xlsx`);
+        XLSX.writeFile(workbook, `Excel_Manager_${Date.now()}.xlsx`);
     }
 
-    // 7. 【清空】一键清空数据
+    // 7. 【清空】
     function clearAllData() {
-        if (confirm("⚠️ 警告：确定要清空当前网页上的所有表格数据吗？清空后将无法找回。")) {
+        if (confirm("⚠️ 确定要清空数据吗？")) {
             tableData = [];
+            headers = [];
+            localStorage.removeItem('excel_virtual_db');
+            localStorage.removeItem('excel_virtual_headers');
             renderTable();
         }
     }
 
-    // 页面载入时自动运行初始化
+    // 初始化运行
     window.onload = function() {
-        const cachedHeaders = localStorage.getItem('excel_virtual_headers');
-        if (cachedHeaders) headers = JSON.parse(cachedHeaders);
         renderTable();
     };
 </script>
+
 </body>
 </html>
 
