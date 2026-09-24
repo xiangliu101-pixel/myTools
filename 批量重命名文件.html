@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>批量文件重命名（原地 + 多文件）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh; padding: 24px 16px 60px; color: #2d3748;
+  }
+  .container { max-width: 1020px; margin: 0 auto; }
+  h1 { color: #fff; text-align: center; font-size: 26px; margin-bottom: 6px;
+       text-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  .subtitle { color: rgba(255,255,255,.92); text-align: center; margin-bottom: 22px; font-size: 13px; }
+  .card { background: #fff; border-radius: 12px; padding: 20px 22px;
+          margin-bottom: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
+  .card h2 { font-size: 15px; color: #4a5568; margin-bottom: 14px;
+             display: flex; align-items: center; gap: 8px; }
+  .badge { display: inline-block; background: #667eea; color: #fff;
+           font-size: 12px; border-radius: 50%; width: 20px; height: 20px;
+           line-height: 20px; text-align: center; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .row > label { width: 68px; font-size: 14px; color: #4a5568; flex-shrink: 0; }
+  input[type="text"] {
+    flex: 1; min-width: 140px; padding: 8px 12px; border: 1px solid #cbd5e0;
+    border-radius: 6px; font-size: 14px; outline: none; transition: .15s; background: #f8fafc;
+  }
+  input[type="text"]:focus { border-color: #667eea; background: #fff;
+                             box-shadow: 0 0 0 3px rgba(102,126,234,.15); }
+  select {
+    padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px;
+    font-size: 14px; background: #f8fafc; outline: none; font-family: inherit;
+  }
+  select:focus { border-color: #667eea; background: #fff; }
+  button { padding: 9px 18px; border: none; border-radius: 6px; cursor: pointer;
+           font-size: 14px; font-weight: 500; transition: .15s; font-family: inherit; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: #667eea; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #5568d3; }
+  .btn-success { background: #48bb78; color: #fff; }
+  .btn-success:hover:not(:disabled) { background: #38a169; }
+  .btn-ghost { background: #edf2f7; color: #4a5568; border: 1px dashed #cbd5e0; }
+  .btn-ghost:hover:not(:disabled) { background: #e2e8f0; }
+  .btn-warn { background: #ed8936; color: #fff; }
+  .btn-warn:hover:not(:disabled) { background: #dd6b20; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .rule-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .rule-row input { flex: 1; }
+  .rule-row .arrow { color: #a0aec0; font-size: 14px; }
+  .rule-row .remove { background: #fed7d7; color: #c53030; padding: 6px 12px; border-radius: 6px;
+                      font-size: 16px; line-height: 1; }
+  .rule-row .remove:hover { background: #fc8181; color: #fff; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .table-wrap { max-height: 460px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { position: sticky; top: 0; background: #f7fafc; text-align: left;
+             padding: 10px 12px; font-weight: 600; color: #4a5568;
+             border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid #edf2f7; word-break: break-all; }
+  tbody tr:hover { background: #f7fafc; }
+  tbody tr:last-child td { border-bottom: none; }
+  .old-name { color: #718096; }
+  .new-name { color: #2d3748; font-weight: 500; }
+  .new-name.changed { color: #2b6cb0; }
+  .status { font-size: 12px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .status.ok { background: #c6f6d5; color: #276749; }
+  .status.same { background: #e2e8f0; color: #718096; }
+  .status.conflict { background: #fed7d7; color: #c53030; }
+  .status.skip { background: #fefcbf; color: #975a16; }
+  .empty { padding: 40px; text-align: center; color: #a0aec0; font-size: 14px; }
+  .tip { background: #ebf8ff; border-left: 3px solid #4299e1; color: #2c5282;
+         padding: 10px 14px; border-radius: 6px; font-size: 13px; line-height: 1.7; margin-bottom: 14px; }
+  .tip.warn { background: #fffaf0; border-left-color: #ed8936; color: #7b341e; }
+  .tip.err { background: #fff5f5; border-left-color: #f56565; color: #742a2a; }
+  .tip.ok { background: #f0fff4; border-left-color: #48bb78; color: #22543d; }
+  .small { font-size: 12px; color: #a0aec0; margin-left: 4px; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  .filter-box { display: none; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .filter-box.show { display: flex; }
+  .filter-box input { flex: 1; min-width: 160px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>📝 批量文件重命名工具</h1>
+  <p class="subtitle">加前缀 · 加后缀 · 批量替换 · 原地改名 / 下载副本</p>
+
+  <div class="card" id="envCard">
+    <h2><span class="badge">i</span> 环境检测</h2>
+    <div id="envTip"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="badge">1</span> 设置命名规则</h2>
+    <div class="row">
+      <label>前缀</label>
+      <input type="text" id="prefix" placeholder="例如：2024_，留空表示不加">
+    </div>
+    <div class="row">
+      <label>后缀</label>
+      <input type="text" id="suffix" placeholder="例如：_已修，留空表示不加">
+    </div>
+    <div class="row" style="align-items:flex-start;">
+      <label style="padding-top:9px;">替换</label>
+      <div style="flex:1;">
+        <div id="replacements"></div>
+        <button class="btn-ghost btn-sm" id="addRule">＋ 添加替换规则</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="badge">2</span> 选择文件</h2>
+    <div class="actions">
+      <button class="btn-primary" id="pickDir">📁 选择文件夹（可原地改名）</button>
+      <button class="btn-warn" id="pickFiles">📄 自由选择多个文件（下载副本）</button>
+      <input type="file" id="fileInput" multiple hidden>
+      <button class="btn-ghost btn-sm" id="reload" disabled>🔄 重新读取</button>
+    </div>
+    <div id="modeTip" style="margin-top:12px;"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="badge">3</span> 预览与选择</h2>
+    <div class="filter-box" id="filterBox">
+      <input type="text" id="searchInput" placeholder="🔍 搜索文件名…">
+      <select id="extSelect"><option value="">所有扩展名</option></select>
+    </div>
+    <div class="toolbar">
+      <button class="btn-ghost btn-sm" id="selectAll">全选</button>
+      <button class="btn-ghost btn-sm" id="selectNone">全不选</button>
+      <button class="btn-ghost btn-sm" id="selectInvert">反选</button>
+      <span class="small" id="counter"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px;"><input type="checkbox" id="checkAll"></th>
+            <th>原文件名</th>
+            <th style="width:30px;"></th>
+            <th>新文件名</th>
+            <th style="width:110px;">状态</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="5" class="empty">还没有选择文件或文件夹</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="badge">4</span> 执行</h2>
+    <div class="actions">
+      <button class="btn-success" id="execute" disabled>🚀 开始重命名</button>
+      <button class="btn-ghost" id="reset">清空列表</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============ 环境检测 ============ */
+const supportsFS = typeof window.showDirectoryPicker === 'function';
+const envTip = document.getElementById('envTip');
+
+if (supportsFS) {
+  envTip.innerHTML = `<div class="tip ok">
+    ✅ 当前浏览器支持 <b>File System Access API</b>，可使用「文件夹模式」原地改名。
+  </div>`;
+} else {
+  envTip.innerHTML = `<div class="tip err">
+    ❌ 当前浏览器不支持 File System Access API，无法原地改名。<br>
+    <b>请改用 Chrome 或 Edge 桌面版打开本文件。</b><br>
+    如果已是 Chrome / Edge 仍看到此提示，多半是被 <code>file://</code> 限制了。请在 HTML 所在目录执行：
+    <code style="display:inline-block;margin-top:6px;background:#fff;padding:4px 8px;border-radius:4px;">
+    python -m http.server 8000
+    </code>
+    然后访问 <code>http://localhost:8000/rename.html</code>。
+  </div>`;
+  document.getElementById('pickDir').disabled = true;
+}
+
+/* ============ 状态 ============ */
+let items = [];
+let mode = null;
+let dirHandle = null;
+let searchText = '';
+let extFilter = '';
+let idCounter = 0;
+
+/* ============ DOM ============ */
+const $ = id => document.getElementById(id);
+const prefixInput = $('prefix');
+const suffixInput = $('suffix');
+const replBox     = $('replacements');
+const tbody       = $('tbody');
+const counter     = $('counter');
+const checkAll    = $('checkAll');
+const executeBtn  = $('execute');
+const modeTip     = $('modeTip');
+const filterBox   = $('filterBox');
+const searchInput = $('searchInput');
+const extSelect   = $('extSelect');
+const reloadBtn   = $('reload');
+
+/* ============ 替换规则 UI ============ */
+function addRule(oldVal = '', newVal = '') {
+  const row = document.createElement('div');
+  row.className = 'rule-row';
+  row.innerHTML = `
+    <input type="text" class="rule-old" placeholder="要查找的字符串">
+    <span class="arrow">→</span>
+    <input type="text" class="rule-new" placeholder="替换为（留空=删除）">
+    <button class="remove" title="删除此规则">×</button>
+  `;
+  row.querySelector('.rule-old').value = oldVal;
+  row.querySelector('.rule-new').value = newVal;
+  row.querySelector('.remove').addEventListener('click', () => {
+    row.remove();
+    refreshPreview();
+  });
+  replBox.appendChild(row);
+}
+
+$('addRule').addEventListener('click', () => {
+  addRule();
+  refreshPreview();
+});
+
+function getRules() {
+  const rules = [];
+  replBox.querySelectorAll('.rule-row').forEach(row => {
+    const o = row.querySelector('.rule-old').value;
+    const n = row.querySelector('.rule-new').value;
+    if (o !== '') rules.push([o, n]);
+  });
+  return rules;
+}
+
+addRule();
+
+/* ============ 计算新文件名 ============ */
+function computeNewName(oldName, prefix, suffix, rules) {
+  const dot = oldName.lastIndexOf('.');
+  let stem, ext;
+  if (dot > 0) { stem = oldName.slice(0, dot); ext = oldName.slice(dot); }
+  else         { stem = oldName;               ext = ''; }
+  for (const [o, n] of rules) {
+    if (o === '') continue;
+    stem = stem.split(o).join(n);
+  }
+  stem = prefix + stem + suffix;
+  return stem + ext;
+}
+
+/* ============ 状态判断 ============ */
+function computeStatus(item, all) {
+  if (!item.selected) return 'skip';
+  if (item.newName === item.oldName) return 'same';
+  const dup = all.some(x => x !== item && x.selected && x.newName === item.newName);
+  if (dup) return 'conflict';
+  const taken = all.some(x => x !== item && x.oldName === item.newName && !x.selected);
+  if (taken) return 'conflict';
+  return 'ok';
+}
+
+/* ============ 模式提示 ============ */
+function updateModeTip() {
+  if (mode === 'dir') {
+    modeTip.innerHTML = `<div class="tip ok">
+      ✅ <b>文件夹模式</b>：执行后<b>直接修改磁盘文件名</b>，不产生副本，不下载。<br>
+      在下方列表里用搜索 / 勾选自由选择要处理的文件。
+    </div>`;
+  } else if (mode === 'files') {
+    modeTip.innerHTML = `<div class="tip warn">
+      ⚠️ <b>多文件模式</b>：浏览器不允许网页原地改用户随意选择的多个文件，<br>
+      执行后将以新文件名<b>下载副本</b>到浏览器下载目录，原文件保持不变。<br>
+      <b>如需原地改名，请改用「选择文件夹」。</b>
+    </div>`;
+  } else {
+    modeTip.innerHTML = '';
+  }
+}
+
+/* ============ 渲染 ============ */
+const STATUS_TEXT = {
+  ok: '✓ 可重命名',
+  same: '= 无变化',
+  conflict: '⚠ 名称冲突',
+  skip: '— 已跳过'
+};
+
+function refreshPreview() {
+  const prefix = prefixInput.value;
+  const suffix = suffixInput.value;
+  const rules  = getRules();
+
+  items.forEach(it => {
+    it.newName = computeNewName(it.oldName, prefix, suffix, rules);
+  });
+
+  const sx = searchText.toLowerCase();
+  items.forEach(it => {
+    let v = true;
+    if (mode === 'dir') {
+      if (sx && !it.oldName.toLowerCase().includes(sx)) v = false;
+      if (extFilter && !it.oldName.toLowerCase().endsWith(extFilter)) v = false;
+    }
+    it.visible = v;
+  });
+
+  items.forEach(it => {
+    it.status = computeStatus(it, items);
+  });
+
+  renderPreview();
+  updateExtOptions();
+}
+
+function updateExtOptions() {
+  if (mode !== 'dir') {
+    filterBox.classList.remove('show');
+    return;
+  }
+  filterBox.classList.add('show');
+
+  const exts = new Set();
+  items.forEach(it => {
+    const dot = it.oldName.lastIndexOf('.');
+    if (dot > 0) exts.add(it.oldName.slice(dot).toLowerCase());
+  });
+
+  const current = extSelect.value;
+  const sorted = Array.from(exts).sort();
+  extSelect.innerHTML = '<option value="">所有扩展名</option>' +
+    sorted.map(e => `<option value="${e}">${e}</option>`).join('');
+  if (sorted.includes(current)) extSelect.value = current;
+}
+
+function renderPreview() {
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">还没有选择文件或文件夹</td></tr>';
+    counter.textContent = '';
+    executeBtn.disabled = true;
+    checkAll.checked = false;
+    return;
+  }
+
+  const visibleItems = items.filter(i => i.visible !== false);
+
+  if (visibleItems.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">没有符合筛选条件的文件</td></tr>';
+  } else {
+    let html = '';
+    visibleItems.forEach(it => {
+      const changed = it.newName !== it.oldName;
+      const checked = it.selected ? 'checked' : '';
+      html += `<tr>
+        <td><input type="checkbox" data-id="${it.id}" class="row-check" ${checked}></td>
+        <td class="old-name">${escapeHtml(it.oldName)}</td>
+        <td style="color:#cbd5e0;text-align:center;">→</td>
+        <td class="new-name ${changed ? 'changed' : ''}">${escapeHtml(it.newName)}</td>
+        <td><span class="status ${it.status}">${STATUS_TEXT[it.status]}</span></td>
+      </tr>`;
+    });
+    tbody.innerHTML = html;
+  }
+
+  tbody.querySelectorAll('.row-check').forEach(cb => {
+    cb.addEventListener('change', e => {
+      const id = +e.target.dataset.id;
+      const it = items.find(x => x.id === id);
+      if (it) it.selected = e.target.checked;
+      refreshPreview();
+    });
+  });
+
+  const total    = items.length;
+  const selected = items.filter(i => i.selected).length;
+  const ready    = items.filter(i =>
+    i.selected && i.status === 'ok' && i.newName !== i.oldName
+  ).length;
+  counter.textContent = `共 ${total} 个文件，已选 ${selected} 个，可处理 ${ready} 个`;
+
+  checkAll.checked = selected === total && total > 0;
+  executeBtn.disabled = ready === 0;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+/* ============ 输入事件 ============ */
+prefixInput.addEventListener('input', refreshPreview);
+suffixInput.addEventListener('input', refreshPreview);
+replBox.addEventListener('input', refreshPreview);
+searchInput.addEventListener('input', e => {
+  searchText = e.target.value.trim();
+  refreshPreview();
+});
+extSelect.addEventListener('change', e => {
+  extFilter = e.target.value;
+  refreshPreview();
+});
+
+$('selectAll').addEventListener('click', () => {
+  items.forEach(i => { if (i.visible !== false) i.selected = true; });
+  refreshPreview();
+});
+$('selectNone').addEventListener('click', () => {
+  items.forEach(i => { if (i.visible !== false) i.selected = false; });
+  refreshPreview();
+});
+$('selectInvert').addEventListener('click', () => {
+  items.forEach(i => { if (i.visible !== false) i.selected = !i.selected; });
+  refreshPreview();
+});
+checkAll.addEventListener('change', e => {
+  const v = e.target.checked;
+  items.forEach(i => { if (i.visible !== false) i.selected = v; });
+  refreshPreview();
+});
+
+/* ============ 选择文件夹（原地改名） ============ */
+$('pickDir').addEventListener('click', async () => {
+  if (!supportsFS) return;
+  try {
+    dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+  } catch (e) { return; }
+  await loadDirectory();
+});
+
+reloadBtn.addEventListener('click', async () => {
+  if (mode === 'dir' && dirHandle) await loadDirectory();
+});
+
+async function loadDirectory() {
+  items = [];
+  searchText = '';
+  extFilter = '';
+  searchInput.value = '';
+  extSelect.value = '';
+
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (handle.kind === 'file') {
+      items.push({
+        id: ++idCounter,
+        handle,
+        oldName: name,
+        newName: name,
+        selected: true,
+        status: 'ok',
+        visible: true
+      });
+    }
+  }
+  mode = 'dir';
+  reloadBtn.disabled = false;
+  updateModeTip();
+  refreshPreview();
+}
+
+/* ============ 选择多个文件（下载副本） ============ */
+$('pickFiles').addEventListener('click', () => $('fileInput').click());
+
+$('fileInput').addEventListener('change', e => {
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
+
+  items = files.map(f => ({
+    id: ++idCounter,
+    file: f,
+    oldName: f.name,
+    newName: f.name,
+    selected: true,
+    status: 'ok',
+    visible: true
+  }));
+  mode = 'files';
+  dirHandle = null;
+  reloadBtn.disabled = true;
+  searchText = '';
+  extFilter = '';
+  searchInput.value = '';
+  updateModeTip();
+  refreshPreview();
+  e.target.value = '';
+});
+
+/* ============ 清空 ============ */
+$('reset').addEventListener('click', () => {
+  items = [];
+  mode = null;
+  dirHandle = null;
+  searchText = '';
+  extFilter = '';
+  searchInput.value = '';
+  extSelect.value = '';
+  reloadBtn.disabled = true;
+  updateModeTip();
+  refreshPreview();
+});
+
+/* ============ 执行（点击即执行，无任何弹框/提示） ============ */
+executeBtn.addEventListener('click', async () => {
+  const selected = items.filter(i =>
+    i.selected && i.status === 'ok' && i.newName !== i.oldName
+  );
+  if (selected.length === 0) return; // 按钮此时本就是禁用的
+
+  if (mode === 'dir') {
+    await renameInPlace(selected);
+  } else {
+    await downloadCopies(selected);
+  }
+});
+
+/* ---------- 原地重命名 ---------- */
+async function renameInPlace(selected) {
+  executeBtn.disabled = true;
+  executeBtn.textContent = '处理中…';
+
+  try {
+    // 先读全部内容到内存，避免互相覆盖
+    const payload = [];
+    for (const it of selected) {
+      const file = await it.handle.getFile();
+      payload.push({ oldName: it.oldName, newName: it.newName, blob: file });
+    }
+
+    // 写入新文件名
+    for (const p of payload) {
+      try {
+        const newHandle = await dirHandle.getFileHandle(p.newName, { create: true });
+        const w = await newHandle.createWritable();
+        await w.write(p.blob);
+        await w.close();
+      } catch (err) {
+        console.error('写入失败：', p.newName, err);
+      }
+    }
+
+    // 删除旧文件（避免误删恰好是别人新名字的文件）
+    const newNames = new Set(payload.map(p => p.newName));
+    for (const p of payload) {
+      if (p.oldName !== p.newName && !newNames.has(p.oldName)) {
+        try { await dirHandle.removeEntry(p.oldName); }
+        catch (err) { console.warn('删除旧文件失败：', p.oldName, err); }
+      }
+    }
+
+    // 静默刷新列表
+    await loadDirectory();
+  } catch (err) {
+    console.error(err);
+  } finally {
+    executeBtn.disabled = false;
+    executeBtn.textContent = '🚀 开始重命名';
+  }
+}
+
+/* ---------- 下载副本 ---------- */
+async function downloadCopies(selected) {
+  executeBtn.disabled = true;
+  executeBtn.textContent = '下载中…';
+
+  for (const it of selected) {
+    try {
+      const url = URL.createObjectURL(it.file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = it.newName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      await new Promise(r => setTimeout(r, 120));
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  executeBtn.disabled = false;
+  executeBtn.textContent = '🚀 开始重命名';
+}
+
+/* ============ 初始化 ============ */
+updateModeTip();
+refreshPreview();
+</script>
+</body>
+</html>
