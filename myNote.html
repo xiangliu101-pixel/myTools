@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>在线笔记本 · 本地 TXT</title>
+<style>
+  :root {
+    --bg: #eef1f6;
+    --panel: #ffffff;
+    --panel-2: #f7f9fc;
+    --border: #e3e8f0;
+    --text: #1e2532;
+    --muted: #8a93a5;
+    --primary: #3b6ef6;
+    --primary-soft: #e9f0ff;
+    --danger: #e5484d;
+    --ok: #16a34a;
+    --warn: #d97706;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101216;
+      --panel: #1a1d23;
+      --panel-2: #20242c;
+      --border: #2a2f38;
+      --text: #e6e9ef;
+      --muted: #838c9e;
+      --primary: #5b86ff;
+      --primary-soft: #232c44;
+      --danger: #ff6369;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  [hidden] { display: none !important; }
+
+  .app { height: 100vh; display: flex; flex-direction: column; }
+
+  /* ---------- 工具栏 ---------- */
+  .toolbar {
+    flex: none;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .tb-left, .tb-right { display: flex; align-items: center; gap: 8px; }
+  .tb-mid {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 34px;
+    padding: 0 13px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--primary); color: var(--primary); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    font-weight: 600;
+  }
+  .btn.primary:hover { filter: brightness(1.1); color: #fff; }
+
+  /* ---------- 主体 ---------- */
+  main { flex: 1; display: flex; min-height: 0; background: var(--panel); }
+
+  .sidebar {
+    width: 286px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-2);
+    border-right: 1px solid var(--border);
+  }
+  .sidebar-head { flex: none; padding: 10px 10px 6px; }
+  .search {
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+  .search:focus { border-color: var(--primary); }
+  .search::placeholder { color: var(--muted); }
+
+  .list { flex: 1; overflow-y: auto; padding: 4px 0 12px; }
+  .list::-webkit-scrollbar { width: 8px; }
+  .list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .note-item {
+    position: relative;
+    margin: 2px 8px;
+    padding: 9px 12px 10px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .note-item:hover { background: var(--panel); }
+  .note-item.active { background: var(--primary-soft); }
+  .note-item.active .note-title { color: var(--primary); }
+  .note-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    padding-right: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .note-preview {
+    margin-top: 3px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .note-time { margin-top: 4px; font-size: 11px; color: var(--muted); opacity: .75; }
+  .del {
+    position: absolute;
+    right: 7px;
+    top: 7px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 18px;
+    cursor: pointer;
+    opacity: 0;
+    transition: .15s;
+  }
+  .note-item:hover .del { opacity: 1; }
+  .del:hover { background: var(--danger); color: #fff; }
+
+  .empty-tip {
+    padding: 40px 20px;
+    text-align: center;
+    font-size: 12.5px;
+    line-height: 1.9;
+    color: var(--muted);
+  }
+
+  /* ---------- 编辑器 ---------- */
+  .editor { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .title-input {
+    flex: none;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 700;
+    font-family: inherit;
+    padding: 20px 30px 8px;
+  }
+  .title-input::placeholder { color: var(--muted); opacity: .6; }
+  .content-input {
+    flex: 1;
+    min-height: 0;
+    border: none;
+    outline: none;
+    resize: none;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14.5px;
+    line-height: 1.8;
+    padding: 8px 30px 30px;
+  }
+  .content-input::placeholder { color: var(--muted); opacity: .6; }
+  .content-input::-webkit-scrollbar { width: 10px; }
+  .content-input::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+
+  .empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .empty-inner { text-align: center; color: var(--muted); }
+  .empty-icon { font-size: 44px; margin-bottom: 12px; opacity: .7; }
+  .empty-inner p { margin: 0; font-size: 14px; }
+  .empty-inner .sub { margin-top: 8px; font-size: 12.5px; opacity: .8; }
+
+  /* ---------- 状态栏 ---------- */
+  .statusbar {
+    flex: none;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .status-msg.ok { color: var(--ok); }
+  .status-msg.warn { color: var(--warn); }
+  .status-msg.error { color: var(--danger); }
+
+  /* ---------- 窄屏 ---------- */
+  @media (max-width: 720px) {
+    main { flex-direction: column; }
+    .sidebar {
+      width: 100%;
+      height: 38%;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+    .toolbar { flex-wrap: wrap; height: auto; padding: 8px 10px; }
+    .tb-mid { order: 3; flex-basis: 100%; text-align: left; }
+    .title-input { padding: 16px 18px 6px; font-size: 18px; }
+    .content-input { padding: 6px 18px 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="toolbar">
+    <div class="tb-left">
+      <button class="btn" id="btnOpen">📂 打开文件</button>
+      <button class="btn" id="btnSave">💾 保存</button>
+      <button class="btn" id="btnSaveAs">另存为</button>
+    </div>
+    <div class="tb-mid"><span id="fileLabel">未关联文件</span></div>
+    <div class="tb-right">
+      <button class="btn primary" id="btnNew">＋ 新建笔记</button>
+    </div>
+  </header>
+
+  <main>
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <input id="search" class="search" placeholder="搜索笔记…" autocomplete="off">
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+
+    <section class="editor" id="editor" hidden>
+      <input id="titleInput" class="title-input" placeholder="无标题" autocomplete="off">
+      <textarea id="contentInput" class="content-input" placeholder="开始输入…" spellcheck="false"></textarea>
+    </section>
+
+    <section class="empty" id="empty">
+      <div class="empty-inner">
+        <div class="empty-icon">📝</div>
+        <p>还没有打开笔记</p>
+        <p class="sub">点击「打开文件」读取本地 txt，或「新建笔记」开始</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span id="statusMsg" class="status-msg">就绪</span>
+    <span id="countMsg" class="count-msg"></span>
+  </footer>
+</div>
+
+<input type="file" id="fileInput" accept=".txt,.md,.text,text/plain" hidden>
+
+<script>
+(function () {
+  'use strict';
+
+  const $ = (s, r) => (r || document).querySelector(s);
+  const LS_KEY = 'online-notepad-v1';
+  const supportsFS = 'showOpenFilePicker' in window;
+
+  /* ================= 状态 ================= */
+  const state = {
+    notes: [],
+    currentId: null,
+    fileHandle: null,
+    fileName: '',
+    dirty: false,
+    saveTimer: null
+  };
+
+  const current = () => state.notes.find(n => n.id === state.currentId) || null;
+
+  /* ================= 工具 ================= */
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+  function fmtTime(d) {
+    d = d || new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+  function preview(s) {
+    return (s || '').replace(/\s+/g, ' ').trim().slice(0, 46);
+  }
+  function setStatus(msg, type) {
+    const el = $('#statusMsg');
+    el.textContent = msg;
+    el.className = 'status-msg' + (type ? ' ' + type : '');
+  }
+
+  /* ================= 序列化 / 解析 ================= */
+  function serialize() {
+    return state.notes.map(n =>
+      '@@@NOTE\n' +
+      '@@@ID:' + n.id + '\n' +
+      '@@@TITLE:' + String(n.title || '').replace(/\n/g, ' ') + '\n' +
+      '@@@TIME:' + n.updated + '\n' +
+      '@@@BODY\n' +
+      (n.content || '') + '\n' +
+      '@@@END\n'
+    ).join('\n');
+  }
+
+  function parseText(text) {
+    const lines = text.replace(/\r\n/g, '\n').split('\n');
+    const notes = [];
+    let cur = null, inBody = false, body = [];
+
+    const flush = () => {
+      if (!cur) return;
+      cur.content = body.join('\n').replace(/\n+$/, '');
+      notes.push(cur);
+      cur = null; body = []; inBody = false;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      if (line.indexOf('@@@NOTE') === 0) {
+        flush();
+        cur = { id: uid(), title: '', content: '', updated: fmtTime() };
+        continue;
+      }
+      if (line.indexOf('@@@END') === 0) { flush(); continue; }
+      if (!cur) {
+        if (line.trim()) return null; // 非本程序格式
+        continue;
+      }
+      if (!inBody) {
+        if (line.indexOf('@@@ID:') === 0) { cur.id = line.slice(6).trim() || cur.id; continue; }
+        if (line.indexOf('@@@TITLE:') === 0) { cur.title = line.slice(9); continue; }
+        if (line.indexOf('@@@TIME:') === 0) { cur.updated = line.slice(8).trim() || cur.updated; continue; }
+        if (line.indexOf('@@@BODY') === 0) { inBody = true; continue; }
+        continue; // 忽略未知/空行
+      }
+      body.push(line);
+    }
+    flush();
+    return notes.length ? notes : null;
+  }
+
+  /* ================= 渲染 ================= */
+  function renderList() {
+    const list = $('#list');
+    const kw = $('#search').value.trim().toLowerCase();
+    const scroll = list.scrollTop;
+
+    const items = state.notes.filter(n =>
+      !kw || (n.title + '\n' + n.content).toLowerCase().indexOf(kw) !== -1
+    );
+
+    if (!items.length) {
+      list.innerHTML = '<div class="empty-tip">' +
+        (state.notes.length ? '没有匹配的笔记' : '还没有笔记<br>点击「＋ 新建笔记」开始') +
+        '</div>';
+      return;
+    }
+
+    list.innerHTML = items.map(n => `
+      <div class="note-item${n.id === state.currentId ? ' active' : ''}" data-id="${n.id}">
+        <button class="del" data-del="${n.id}" title="删除">×</button>
+        <div class="note-title">${esc(n.title || '无标题')}</div>
+        <div class="note-preview">${esc(preview(n.content)) || '空笔记'}</div>
+        <div class="note-time">${esc(n.updated)}</div>
+      </div>
+    `).join('');
+
+    list.scrollTop = scroll;
+  }
+
+  function refreshItem(id) {
+    const n = state.notes.find(x => x.id === id);
+    const el = document.querySelector('.note-item[data-id="' + id + '"]');
+    if (!n || !el) return;
+    el.querySelector('.note-title').textContent = n.title || '无标题';
+    el.querySelector('.note-preview').textContent = preview(n.content) || '空笔记';
+    el.querySelector('.note-time').textContent = n.updated;
+  }
+
+  function renderEditor() {
+    const n = current();
+    if (!n) {
+      $('#editor').hidden = true;
+      $('#empty').hidden = false;
+      $('#countMsg').textContent = '';
+      return;
+    }
+    $('#editor').hidden = false;
+    $('#empty').hidden = true;
+    $('#titleInput').value = n.title;
+    $('#contentInput').value = n.content;
+    updateCount();
+  }
+
+  function updateFileLabel() {
+    const el = $('#fileLabel');
+    el.textContent = state.fileName || '未关联文件';
+    el.title = state.fileName || '';
+  }
+
+  function updateCount() {
+    const n = current();
+    $('#countMsg').textContent = n
+      ? n.content.replace(/\s/g, '').length + ' 字'
+      : '';
+  }
+
+  /* ================= 本地缓存 ================= */
+  function persistLocal() {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        notes: state.notes,
+        currentId: state.currentId,
+        fileName: state.fileName
+      }));
+    } catch (e) { /* 忽略容量错误 */ }
+  }
+
+  function restoreLocal() {
+    try {
+      const d = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+      if (d && Array.isArray(d.notes) && d.notes.length) {
+        state.notes = d.notes;
+        state.currentId = d.currentId && d.notes.some(n => n.id === d.currentId)
+          ? d.currentId : d.notes[0].id;
+        state.fileName = d.fileName ? d.fileName + '（未关联）' : '';
+        renderList(); renderEditor(); updateFileLabel();
+        setStatus('已恢复上次编辑的内容，可重新打开文件关联', 'warn');
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  /* ================= 文件读写 ================= */
+  async function openFile() {
+    if (!supportsFS) { $('#fileInput').click(); return; }
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{ description: '文本文件', accept: { 'text/plain': ['.txt', '.md', '.text'] } }]
+      });
+      const file = await handle.getFile();
+      const text = await file.text();
+
+      state.fileHandle = handle;
+      state.fileName = file.name;
+      loadText(text);
+      persistLocal();
+      setStatus('已打开 ' + file.name, 'ok');
+    } catch (e) {
+      if (e && e.name !== 'AbortError') setStatus('打开失败：' + e.message, 'error');
+    }
+  }
+
+  function loadText(text) {
+    const parsed = parseText(text);
+    if (parsed && parsed.length) {
+      state.notes = parsed;
+    } else if (text.trim()) {
+      state.notes = [{
+        id: uid(),
+        title: '导入的文本',
+        content: text.replace(/\r\n/g, '\n'),
+        updated: fmtTime()
+      }];
+    } else {
+      state.notes = [];
+    }
+    state.currentId = state.notes.length ? state.notes[0].id : null;
+    state.dirty = false;
+    renderList(); renderEditor(); updateFileLabel();
+  }
+
+  async function writeToHandle(handle, text, askPermission) {
+    if (handle.queryPermission) {
+      const opts = { mode: 'readwrite' };
+      let p = await handle.queryPermission(opts);
+      if (p !== 'granted' && askPermission) {
+        p = await handle.requestPermission(opts);
+      }
+      if (p !== 'granted') throw new Error('没有写入权限，请点击「保存」按钮授权');
+    }
+    const w = await handle.createWritable();
+    await w.write(text);
+    await w.close();
+  }
+
+  async function saveFile() {
+    if (!state.fileHandle) return saveAs();
+    try {
+      await writeToHandle(state.fileHandle, serialize(), true);
+      state.dirty = false;
+      persistLocal();
+      setStatus('已保存 · ' + fmtTime(), 'ok');
+    } catch (e) {
+      setStatus('保存失败：' + e.message, 'error');
+    }
+  }
+
+  async function saveAs() {
+    const text = serialize();
+    const baseName = (state.fileName || '我的笔记.txt').replace(/（未关联）$/, '');
+
+    if (supportsFS) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: baseName,
+          types: [{ description: '文本文件', accept: { 'text/plain': ['.txt'] } }]
+        });
+        await writeToHandle(handle, text, true);
+        state.fileHandle = handle;
+        state.fileName = handle.name;
+        state.dirty = false;
+        updateFileLabel(); persistLocal();
+        setStatus('已保存到 ' + handle.name, 'ok');
+      } catch (e) {
+        if (e && e.name !== 'AbortError') setStatus('保存失败：' + e.message, 'error');
+      }
+      return;
+    }
+
+    // 降级：下载
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = baseName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    state.dirty = false;
+    setStatus('当前浏览器不支持直接写入，已下载文件', 'warn');
+  }
+
+  /* ================= 增删改 ================= */
+  function newNote() {
+    const n = { id: uid(), title: '', content: '', updated: fmtTime() };
+    state.notes.unshift(n);
+    state.currentId = n.id;
+    $('#search').value = '';
+    renderList(); renderEditor();
+    $('#titleInput').focus();
+    markDirty();
+  }
+
+  function deleteNote(id) {
+    const i = state.notes.findIndex(n => n.id === id);
+    if (i < 0) return;
+    const n = state.notes[i];
+    if (!confirm('确定删除「' + (n.title || '无标题') + '」？此操作不可撤销。')) return;
+
+    state.notes.splice(i, 1);
+    if (state.currentId === id) {
+      const next = state.notes[Math.min(i, state.notes.length - 1)];
+      state.currentId = next ? next.id : null;
+    }
+    renderList(); renderEditor();
+    markDirty();
+    setStatus('已删除 1 条笔记', 'warn');
+  }
+
+  function markDirty() {
+    state.dirty = true;
+    setStatus('未保存…', 'warn');
+    persistLocal();
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(autoSave, 1500);
+  }
+
+  async function autoSave() {
+    if (!state.dirty) return;
+    if (!state.fileHandle) {
+      setStatus('已暂存到浏览器（未关联文件）', 'warn');
+      return;
+    }
+    try {
+      await writeToHandle(state.fileHandle, serialize(), false);
+      state.dirty = false;
+      setStatus('已自动保存 · ' + fmtTime(), 'ok');
+    } catch (e) {
+      setStatus('自动保存失败，请手动点击「保存」', 'error');
+    }
+  }
+
+  /* ================= 事件 ================= */
+  $('#btnOpen').addEventListener('click', openFile);
+  $('#btnSave').addEventListener('click', saveFile);
+  $('#btnSaveAs').addEventListener('click', saveAs);
+  $('#btnNew').addEventListener('click', newNote);
+
+  $('#fileInput').addEventListener('change', async e => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      state.fileHandle = null;
+      state.fileName = file.name;
+      loadText(text);
+      persistLocal();
+      setStatus('已读取 ' + file.name + '（当前浏览器不支持写回，可用「另存为」导出）', 'warn');
+    } catch (err) {
+      setStatus('读取失败：' + err.message, 'error');
+    }
+    e.target.value = '';
+  });
+
+  $('#list').addEventListener('click', e => {
+    const delBtn = e.target.closest('[data-del]');
+    if (delBtn) {
+      e.stopPropagation();
+      deleteNote(delBtn.getAttribute('data-del'));
+      return;
+    }
+    const item = e.target.closest('.note-item');
+    if (!item) return;
+    const id = item.getAttribute('data-id');
+    if (id === state.currentId) return;
+    state.currentId = id;
+    renderList(); renderEditor();
+    persistLocal();
+  });
+
+  $('#search').addEventListener('input', renderList);
+
+  $('#titleInput').addEventListener('input', e => {
+    const n = current();
+    if (!n) return;
+    n.title = e.target.value;
+    n.updated = fmtTime();
+    refreshItem(n.id);
+    markDirty();
+  });
+
+  $('#contentInput').addEventListener('input', e => {
+    const n = current();
+    if (!n) return;
+    n.content = e.target.value;
+    n.updated = fmtTime();
+    refreshItem(n.id);
+    updateCount();
+    markDirty();
+  });
+
+  // Tab 键插入缩进
+  $('#contentInput').addEventListener('keydown', e => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const ta = e.target;
+      const s = ta.selectionStart, en = ta.selectionEnd;
+      ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(en);
+      ta.selectionStart = ta.selectionEnd = s + 2;
+      ta.dispatchEvent(new Event('input'));
+    }
+  });
+
+  // 快捷键
+  document.addEventListener('keydown', e => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      saveFile();
+    }
+  });
+
+  window.addEventListener('beforeunload', e => {
+    if (state.dirty) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+  /* ================= 启动 ================= */
+  (function init() {
+    updateFileLabel();
+    if (!restoreLocal()) {
+      setStatus(supportsFS
+        ? '就绪 · 点击「打开文件」读取本地 txt'
+        : '就绪 · 当前浏览器不支持写回本地文件，可读取与另存为');
+      renderList();
+      renderEditor();
+    }
+  })();
+})();
+</script>
+</body>
+</html>
